@@ -3,7 +3,7 @@
 // ============================================
 
 const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
-const DEFAULT_PARALLEL = 50;
+const DEFAULT_PARALLEL = 100;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;  // 1 second
 const REQUEST_TIMEOUT_MS = 30000;  // 30 seconds

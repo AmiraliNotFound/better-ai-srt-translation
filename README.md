@@ -20,8 +20,8 @@ Translating subtitles is tedious and expensive:
 ## ✨ Features
 
 - **Drag & Drop** - Just drop your SRT file and go
-- **50 Parallel Requests** - Blazing fast translation
-- **Smart Chunking** - Processes 75 subtitle blocks per request for optimal speed/accuracy balance
+- **100 Parallel Requests** - Blazing fast translation
+- **Smart Chunking** - Processes 20 subtitle blocks per request for optimal precision
 - **Marker-Based Alignment** - Each subtitle block stays aligned with its timestamp
 - **Custom Instructions** - Add context-specific translation rules (e.g., "Use informal 'sen' instead of formal 'siz'")
 - **Custom Model Support** - Use any model available on OpenRouter
@@ -43,10 +43,15 @@ Translating subtitles is tedious and expensive:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | **Model** | `google/gemini-3-flash-preview` | AI model for translation |
-| **Chunk Size** | 75 | Number of subtitle blocks per API request |
-| **Parallel Requests** | 50 | Maximum concurrent API calls |
+| **Chunk Size** | 20 | Number of subtitle blocks per API request |
+| **Parallel Requests** | 100 | Maximum concurrent API calls |
 
-### Recommended Model
+### Recommended Settings
+
+**Chunk Size: 20** is recommended for better precision. Smaller chunks mean:
+- Less text drift between subtitle blocks
+- More accurate timing alignment
+- Slightly more API calls, but with 100 parallel requests it's still fast
 
 For the best **performance/cost** balance, we recommend:
 
