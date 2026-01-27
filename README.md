@@ -61,8 +61,6 @@ This model offers:
 - Cost-effective pricing
 
 Other options:
-- `google/gemini-2.5-flash` - Slightly cheaper, good quality
-- `anthropic/claude-3.5-sonnet` - Premium quality, higher cost
 - `google/gemini-2.5-flash-lite` - Budget option, may have lower accuracy
 
 ## 🧠 How It Works
