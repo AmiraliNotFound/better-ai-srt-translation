@@ -70,29 +70,59 @@ Other options:
 
 ## 🧠 How It Works
 
-### The Marker System
+### The Problem: Text Drift
 
-Traditional AI translation loses track of which text belongs to which subtitle block. We solve this with markers:
+Subtitles split sentences across multiple timed blocks. The problem? **Languages have different structures.** 
+
+English (SVO): "I **love** you" → Subject, Verb, Object  
+Turkish (SOV): "Seni **seviyorum**" → Object, Subject+Verb
+
+When you translate subtitle blocks independently, the words end up in wrong timestamps:
+
+```
+English Subtitles:          Turkish (Naive Translation):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[00:01] "I will not"    →   [00:01] "Bunu yapmayacağım"  ← Too long!
+[00:02] "do this."      →   [00:02] ""                    ← Empty!
+```
+
+The AI translated the full sentence in Block 1, leaving Block 2 empty. Now timing is broken.
+
+### The Solution: Markers
+
+We inject `[B#]` markers to create explicit boundaries:
 
 **Input to AI:**
 ```
-[B1] I don't think OpenAI will
-[B2] be around in 5 years.
-[B3] They're burning cash.
+[B1] Hello and welcome to
+[B2] a new episode. Today we have
+[B3] Chris Titus with us.
 ```
 
 **AI Output:**
 ```
-[B1] OpenAI'ın var olacağını
-[B2] 5 yıl içinde sanmıyorum.
-[B3] Paralarını yakıyorlar.
+[B1] Merhaba ve yeni bir
+[B2] bölüme hoş geldiniz. Bugün yanımızda
+[B3] Chris Titus var.
 ```
 
-Each `[B#]` marker ensures the translated text maps back to the correct timestamp.
+Each marker acts as an anchor:
+- `[B1]` content stays in Block 1's timestamp
+- `[B2]` content stays in Block 2's timestamp
+- Sentence boundaries can span blocks - that's fine!
+
+### Smart Chunking
+
+Chunks don't break at fixed sizes. We look for natural sentence endings (`. ! ?`) within the last 10 blocks:
+
+```
+Target: 20 blocks
+Actual: 23 blocks (because sentence ends at block 23)
+```
 
 ### Translation Priority
 
-1. **Line Structure** (Mandatory) - Each marker line stays separate
+1. **Line Structure** (Mandatory) - Each `[B#]` stays on its own line
 2. **Natural Translation** - Idiomatic, not word-for-word
 3. **Word Count** (Soft) - Similar length per line when possible
 
