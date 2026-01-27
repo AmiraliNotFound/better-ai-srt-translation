@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRT Translator</title>
+    <link rel="stylesheet" href="src/styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>SRT Translator</h1>
+            <p class="subtitle">AI-Powered Subtitle Translation via OpenRouter</p>
+        </header>
+
+        <div class="card">
+            <div class="card-title">API Configuration</div>
+            <input type="password" id="apiKey" class="input-field" placeholder="Enter your OpenRouter API key...">
+            <div class="model-row">
+                <input type="text" id="customModel" class="input-field"
+                    placeholder="Custom model (leave empty for default: google/gemini-3-flash-preview)">
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Translation Settings</div>
+            <div class="settings-grid">
+                <label>
+                    <span>Target Language</span>
+                    <select id="targetLanguage" class="select-field">
+                        <option value="Turkish">Turkish</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="French">French</option>
+                        <option value="German">German</option>
+                        <option value="Italian">Italian</option>
+                        <option value="Portuguese">Portuguese</option>
+                        <option value="Russian">Russian</option>
+                        <option value="Japanese">Japanese</option>
+                        <option value="Korean">Korean</option>
+                        <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+                        <option value="Chinese (Traditional)">Chinese (Traditional)</option>
+                        <option value="Arabic">Arabic</option>
+                        <option value="Hindi">Hindi</option>
+                        <option value="Dutch">Dutch</option>
+                        <option value="Polish">Polish</option>
+                        <option value="Swedish">Swedish</option>
+                        <option value="Vietnamese">Vietnamese</option>
+                        <option value="Thai">Thai</option>
+                        <option value="Indonesian">Indonesian</option>
+                        <option value="Greek">Greek</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Chunk Size (SRT blocks)</span>
+                    <input type="number" id="chunkSize" class="input-field" value="75" min="10" max="200">
+                </label>
+                <label>
+                    <span>Parallel Requests</span>
+                    <input type="number" id="parallelRequests" class="input-field" value="50" min="1" max="100">
+                </label>
+            </div>
+            <div class="instruction-section">
+                <label>
+                    <span>Custom Instructions (optional)</span>
+                    <textarea id="customInstructions" class="textarea-field"
+                        placeholder="Add any specific translation instructions here... (e.g., 'Keep technical terms in English', 'Use informal tone')"
+                        rows="3"></textarea>
+                </label>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Upload SRT File</div>
+            <div class="drop-zone" id="dropZone">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p id="dropText">Drop your .srt file here or click to browse</p>
+                <p class="filename hidden" id="fileName"></p>
+            </div>
+            <input type="file" id="fileInput" accept=".srt" class="hidden">
+        </div>
+
+        <button class="btn btn-primary" id="translateBtn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+            </svg>
+            <span id="translateBtnText">Translate</span>
+        </button>
+
+        <div class="card hidden" id="progressCard">
+            <div class="card-title">Translation Progress</div>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="totalChunks">0</div>
+                    <div class="stat-label">Total Chunks</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="completedChunks">0</div>
+                    <div class="stat-label">Completed</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="failedChunks">0</div>
+                    <div class="stat-label">Failed</div>
+                </div>
+            </div>
+
+            <div class="progress-section">
+                <div class="progress-header">
+                    <span class="progress-label">Overall Progress</span>
+                    <span class="progress-percentage" id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div class="chunks-grid" id="chunksGrid"></div>
+
+            <div class="log-container" id="logContainer"></div>
+        </div>
+
+        <button class="btn btn-success hidden" id="downloadBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24"
+                stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Download Translated SRT
+        </button>
+    </div>
+
+    <script src="src/app.js"></script>
+</body>
+
+</html>
