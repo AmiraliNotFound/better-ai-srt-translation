@@ -136,8 +136,7 @@ Use casual, engaging language suitable for YouTube videos.
 
 ## 📄 License
 
-MIT License - Use freely for personal or commercial projects.
-
+GPL-3.0 License
 ---
 
 Built with ❤️ for content creators who need fast, accurate subtitle translations.
