@@ -12,15 +12,24 @@
     <div class="container">
         <header>
             <h1>SRT Translator</h1>
-            <p class="subtitle">AI-Powered Subtitle Translation via OpenRouter</p>
+            <p class="subtitle">AI-Powered Subtitle Translation via Google AI Studio & OpenRouter</p>
         </header>
 
         <div class="card">
             <div class="card-title">API Configuration</div>
-            <input type="password" id="apiKey" class="input-field" placeholder="Enter your OpenRouter API key...">
-            <div class="model-row">
+            <div class="settings-grid" style="grid-template-columns: 1fr; margin-bottom: 0.8rem;">
+                <label style="margin: 0;">
+                    <span style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem; display: block;">API Provider</span>
+                    <select id="apiProvider" class="select-field" style="width: 100%;">
+                        <option value="gemini">Google AI Studio (Gemini API)</option>
+                        <option value="openrouter">OpenRouter</option>
+                    </select>
+                </label>
+            </div>
+            <input type="password" id="apiKey" class="input-field" placeholder="Enter your Gemini API key...">
+            <div class="model-row" style="margin-top: 0.8rem;">
                 <input type="text" id="customModel" class="input-field"
-                    placeholder="Custom model (leave empty for default: google/gemini-3-flash-preview)">
+                    placeholder="Custom model (leave empty for default: gemini-3.1-flash-lite)">
             </div>
         </div>
 
@@ -42,6 +51,7 @@
                         <option value="Chinese (Simplified)">Chinese (Simplified)</option>
                         <option value="Chinese (Traditional)">Chinese (Traditional)</option>
                         <option value="Arabic">Arabic</option>
+                        <option value="Persian">Persian</option>
                         <option value="Hindi">Hindi</option>
                         <option value="Dutch">Dutch</option>
                         <option value="Polish">Polish</option>
@@ -58,7 +68,17 @@
                 </label>
                 <label>
                     <span>Parallel Requests</span>
-                    <input type="number" id="parallelRequests" class="input-field" value="100" min="1" max="100">
+                    <input type="number" id="parallelRequests" class="input-field" value="5" min="1" max="100">
+                </label>
+            </div>
+            <div class="checkbox-row" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="optimizeTimings" style="cursor: pointer; width: 1.2rem; height: 1.2rem; border-radius: 4px; accent-color: var(--accent-primary);">
+                    <span>Extend short subtitles (increase display time for fast subtitles)</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem; cursor: pointer; user-select: none;">
+                    <input type="checkbox" id="mergeSubtitles" style="cursor: pointer; width: 1.2rem; height: 1.2rem; border-radius: 4px; accent-color: var(--accent-primary);">
+                    <span>Merge short split sentences (prevent single words from flashing on screen)</span>
                 </label>
             </div>
             <div class="instruction-section">

@@ -2,11 +2,21 @@
 // SRT Translator - App Logic
 // ============================================
 
-const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
-const DEFAULT_PARALLEL = 100;
+const DEFAULT_MODEL_GEMINI = 'gemini-3.1-flash-lite';
+const DEFAULT_MODEL_OPENROUTER = 'google/gemini-3.1-flash-lite';
+const DEFAULT_PARALLEL = 5; // Safe default for Gemini API Free Tier
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;  // 1 second
 const REQUEST_TIMEOUT_MS = 30000;  // 30 seconds
+
+// Custom API Error class to propagate status and detailed payload
+class APIError extends Error {
+    constructor(status, message, details) {
+        super(message);
+        this.status = status;
+        this.details = details;
+    }
+}
 
 // State
 let srtContent = '';
@@ -36,7 +46,10 @@ const elements = {
     progressPercent: document.getElementById('progressPercent'),
     totalChunks: document.getElementById('totalChunks'),
     completedChunks: document.getElementById('completedChunks'),
-    failedChunks: document.getElementById('failedChunks')
+    failedChunks: document.getElementById('failedChunks'),
+    optimizeTimings: document.getElementById('optimizeTimings'),
+    mergeSubtitles: document.getElementById('mergeSubtitles'),
+    apiProvider: document.getElementById('apiProvider')
 };
 
 // ============================================
@@ -45,33 +58,69 @@ const elements = {
 
 function init() {
     loadSavedSettings();
+    updateProviderUI();
     setupEventListeners();
 }
 
+function updateProviderUI() {
+    const provider = elements.apiProvider.value;
+    if (provider === 'openrouter') {
+        elements.apiKey.placeholder = 'Enter your OpenRouter API key...';
+        elements.customModel.placeholder = `Custom model (leave empty for default: ${DEFAULT_MODEL_OPENROUTER})`;
+    } else {
+        elements.apiKey.placeholder = 'Enter your Gemini API key...';
+        elements.customModel.placeholder = `Custom model (leave empty for default: ${DEFAULT_MODEL_GEMINI})`;
+    }
+}
+
 function loadSavedSettings() {
-    const savedApiKey = localStorage.getItem('srt_openrouter_api_key');
+    const savedProvider = localStorage.getItem('srt_api_provider');
+    const savedApiKey = localStorage.getItem('srt_gemini_api_key') || localStorage.getItem('srt_openrouter_api_key');
     const savedModel = localStorage.getItem('srt_custom_model');
     const savedLanguage = localStorage.getItem('srt_target_language');
     const savedChunkSize = localStorage.getItem('srt_chunk_size');
     const savedParallel = localStorage.getItem('srt_parallel_requests');
     const savedInstructions = localStorage.getItem('srt_custom_instructions');
+    const savedOptimize = localStorage.getItem('srt_optimize_timings');
+    const savedMerge = localStorage.getItem('srt_merge_subtitles');
 
-    if (savedApiKey) elements.apiKey.value = savedApiKey;
-    if (savedModel) elements.customModel.value = savedModel;
-    if (savedLanguage) elements.targetLanguage.value = savedLanguage;
-    if (savedChunkSize) elements.chunkSize.value = savedChunkSize;
-    if (savedParallel) elements.parallelRequests.value = savedParallel;
+    if (savedProvider) elements.apiProvider.value = savedProvider;
+    else elements.apiProvider.value = 'gemini';
+
+    // Load saved API key (check provider-specific keys first)
+    const provider = elements.apiProvider.value;
+    const providerKey = localStorage.getItem(`srt_${provider}_api_key`);
+    if (providerKey) {
+        elements.apiKey.value = providerKey.trim();
+    } else if (savedApiKey) {
+        elements.apiKey.value = savedApiKey.trim();
+    }
+
+    if (savedModel) elements.customModel.value = savedModel.trim();
+    if (savedLanguage) elements.targetLanguage.value = savedLanguage.trim();
+    if (savedChunkSize) elements.chunkSize.value = savedChunkSize.trim();
+    if (savedParallel) elements.parallelRequests.value = savedParallel.trim();
     else elements.parallelRequests.value = DEFAULT_PARALLEL;
     if (savedInstructions) elements.customInstructions.value = savedInstructions;
+    
+    if (savedOptimize !== null) elements.optimizeTimings.checked = savedOptimize === 'true';
+    else elements.optimizeTimings.checked = false; // Default to false (disabled) to avoid messing up original timings
+
+    if (savedMerge !== null) elements.mergeSubtitles.checked = savedMerge === 'true';
+    else elements.mergeSubtitles.checked = false; // Default to false (disabled)
 }
 
 function saveSettings() {
-    localStorage.setItem('srt_openrouter_api_key', elements.apiKey.value);
-    localStorage.setItem('srt_custom_model', elements.customModel.value);
+    const provider = elements.apiProvider.value;
+    localStorage.setItem('srt_api_provider', provider);
+    localStorage.setItem(`srt_${provider}_api_key`, elements.apiKey.value.trim());
+    localStorage.setItem('srt_custom_model', elements.customModel.value.trim());
     localStorage.setItem('srt_target_language', elements.targetLanguage.value);
     localStorage.setItem('srt_chunk_size', elements.chunkSize.value);
     localStorage.setItem('srt_parallel_requests', elements.parallelRequests.value);
     localStorage.setItem('srt_custom_instructions', elements.customInstructions.value);
+    localStorage.setItem('srt_optimize_timings', elements.optimizeTimings.checked);
+    localStorage.setItem('srt_merge_subtitles', elements.mergeSubtitles.checked);
 }
 
 // ============================================
@@ -91,6 +140,11 @@ function setupEventListeners() {
         saveSettings();
         updateTranslateButton();
     });
+    elements.apiProvider.addEventListener('change', () => {
+        saveSettings();
+        updateProviderUI();
+        updateTranslateButton();
+    });
     elements.customModel.addEventListener('change', saveSettings);
     elements.targetLanguage.addEventListener('change', () => {
         saveSettings();
@@ -99,6 +153,14 @@ function setupEventListeners() {
     elements.chunkSize.addEventListener('change', saveSettings);
     elements.parallelRequests.addEventListener('change', saveSettings);
     elements.customInstructions.addEventListener('change', saveSettings);
+    elements.optimizeTimings.addEventListener('change', () => {
+        saveSettings();
+        reprocessLoadedFile();
+    });
+    elements.mergeSubtitles.addEventListener('change', () => {
+        saveSettings();
+        reprocessLoadedFile();
+    });
 
     // Actions
     elements.translateBtn.addEventListener('click', startTranslation);
@@ -136,15 +198,27 @@ function handleFileSelect(e) {
 // File Processing
 // ============================================
 
+function reprocessLoadedFile() {
+    if (srtContent) {
+        srtBlocks = parseSRT(srtContent);
+        if (elements.mergeSubtitles.checked) {
+            mergeShortSubtitles(srtBlocks);
+        }
+        if (elements.optimizeTimings.checked) {
+            optimizeTimings(srtBlocks);
+        }
+        elements.dropText.textContent = `Loaded: ${srtBlocks.length} subtitle blocks`;
+    }
+}
+
 function processFile(file) {
     originalFileName = file.name;
     const reader = new FileReader();
 
     reader.onload = (e) => {
         srtContent = e.target.result;
-        srtBlocks = parseSRT(srtContent);
+        reprocessLoadedFile();
 
-        elements.dropText.textContent = `Loaded: ${srtBlocks.length} subtitle blocks`;
         elements.fileName.textContent = file.name;
         elements.fileName.classList.remove('hidden');
 
@@ -236,7 +310,7 @@ function blocksToSRT(blocks) {
 // ============================================
 
 function updateTranslateButton() {
-    elements.translateBtn.disabled = !srtContent || !elements.apiKey.value;
+    elements.translateBtn.disabled = !srtContent || !elements.apiKey.value.trim();
 }
 
 function updateTranslateButtonText() {
@@ -299,6 +373,14 @@ Output:
 
 CRITICAL: [B1] → [B1], [B2] → [B2]. Never shift content.`;
 
+    if (['Arabic', 'Persian'].includes(targetLanguage)) {
+        prompt += `
+
+⚠️ IMPORTANT FOR RIGHT-TO-LEFT TRANSLATION:
+- You MUST use correct RTL punctuation (e.g. use Arabic/Persian comma '،' instead of English ',', and Arabic/Persian question mark '؟' instead of English '?').
+- Do NOT translate English names, technical terms, or code if they are best kept in English, but ensure they are embedded naturally in the RTL structure.`;
+    }
+
     if (customInstructions && customInstructions.trim()) {
         prompt += `\n\n⚠️ MANDATORY USER INSTRUCTIONS (MUST FOLLOW):\n${customInstructions.trim()}\n\nYou MUST follow these instructions exactly. They override any conflicting rules.`;
     }
@@ -353,7 +435,7 @@ function parseMarkedTranslation(blocks, translatedText) {
     return result;
 }
 
-async function translateChunk(chunk, index, apiKey, model, targetLanguage, customInstructions) {
+async function translateChunk(chunk, index, apiKey, model, targetLanguage, customInstructions, provider) {
     // Extract text with block markers
     const markedText = extractTextWithMarkers(chunk);
     const systemPrompt = buildSystemPrompt(targetLanguage, customInstructions);
@@ -368,41 +450,127 @@ async function translateChunk(chunk, index, apiKey, model, targetLanguage, custo
     }, REQUEST_TIMEOUT_MS);
 
     try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: markedText }
-                ],
-                temperature: 0.3
-            }),
-            signal: controller.signal
-        });
+        let response;
+        if (provider === 'openrouter') {
+            response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey.trim()}`,
+                    'HTTP-Referer': window.location.origin && window.location.origin !== 'null' ? window.location.origin : 'https://github.com/AmiraliNotFound/better-ai-srt-translation',
+                    'X-Title': 'Better AI SRT Translation'
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: markedText }
+                    ],
+                    temperature: 0.3
+                }),
+                signal: controller.signal
+            });
+        } else {
+            response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [
+                                { text: markedText }
+                            ]
+                        }
+                    ],
+                    systemInstruction: {
+                        parts: [
+                            { text: systemPrompt }
+                        ]
+                    },
+                    generationConfig: {
+                        temperature: 0.3
+                    }
+                }),
+                signal: controller.signal
+            });
+        }
 
         console.log(`[Chunk ${index + 1}] Response received, status: ${response.status}`);
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-            const error = await response.text();
-            throw new Error(`API Error: ${response.status} - ${error}`);
+            const errorText = await response.text();
+            let details = null;
+            let message = errorText;
+            try {
+                const errorObj = JSON.parse(errorText);
+                if (errorObj.error) {
+                    message = errorObj.error.message || errorText;
+                    details = errorObj.error.details || null;
+                }
+            } catch (e) {
+                // not JSON
+            }
+            throw new APIError(response.status, message, details);
         }
 
         const data = await response.json();
         console.log(`[Chunk ${index + 1}] Parsed response, parsing markers...`);
-        const translatedText = data.choices[0].message.content;
+
+        let translatedText;
+        if (provider === 'openrouter') {
+            if (!data.choices || data.choices.length === 0 || !data.choices[0].message || !data.choices[0].message.content) {
+                throw new Error('Invalid or empty response structure from OpenRouter');
+            }
+            translatedText = data.choices[0].message.content;
+        } else {
+            if (!data.candidates || data.candidates.length === 0 || !data.candidates[0].content || !data.candidates[0].content.parts || data.candidates[0].content.parts.length === 0) {
+                throw new Error('Invalid or empty response structure from Gemini API');
+            }
+            translatedText = data.candidates[0].content.parts[0].text;
+        }
 
         // Parse markers and map back to blocks
         const translatedBlocks = parseMarkedTranslation(chunk, translatedText);
 
-        // Convert back to SRT format
+        // Convert back to SRT format and handle RTL formatting if target language is RTL (Arabic, Persian)
+        const isRTL = ['Arabic', 'Persian'].includes(targetLanguage);
         return translatedBlocks.map(block => {
-            return `${block.index}\n${block.timestamp}\n${block.text.join('\n')}`;
+            let text = block.text.join('\n');
+            if (isRTL) {
+                const rlm = '\u200F';
+                const rle = '\u202B';
+                const pdf = '\u202C';
+
+                // Replace English commas not between digits with Arabic/Persian comma
+                text = text.replace(/(?<!\d),|,(?!\d)/g, '،');
+                // Replace English question mark with Arabic/Persian question mark
+                text = text.replace(/\?/g, '؟');
+                // Replace English semicolon with Arabic/Persian semicolon
+                text = text.replace(/;/g, '؛');
+
+                text = text.split('\n').map(line => {
+                    const trimmed = line.trim();
+                    if (trimmed === '') return line;
+                    
+                    let formattedLine = line;
+                    // Wrap line in RLE/PDF and prepend RLM
+                    if (!formattedLine.startsWith(rle)) {
+                        formattedLine = rle + formattedLine;
+                    }
+                    if (!formattedLine.endsWith(pdf)) {
+                        formattedLine = formattedLine + pdf;
+                    }
+                    if (!formattedLine.startsWith(rlm)) {
+                        formattedLine = rlm + formattedLine;
+                    }
+                    return formattedLine;
+                }).join('\n');
+            }
+            return `${block.index}\n${block.timestamp}\n${text}`;
         }).join('\n\n');
 
     } catch (error) {
@@ -415,18 +583,43 @@ async function translateChunk(chunk, index, apiKey, model, targetLanguage, custo
     }
 }
 
-// Retry wrapper with exponential backoff
-async function translateChunkWithRetry(chunk, index, apiKey, model, targetLanguage, customInstructions, onRetry) {
+// Retry wrapper with exponential backoff, and smart rate-limit (429) delay handling
+async function translateChunkWithRetry(chunk, index, apiKey, model, targetLanguage, customInstructions, provider, onRetry) {
     let lastError;
+    let maxAttempts = MAX_RETRIES;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            return await translateChunk(chunk, index, apiKey, model, targetLanguage, customInstructions);
+            return await translateChunk(chunk, index, apiKey, model, targetLanguage, customInstructions, provider);
         } catch (error) {
             lastError = error;
 
-            if (attempt < MAX_RETRIES) {
-                const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+            if (attempt < maxAttempts) {
+                let delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+
+                // Smart handling of 429 Rate Limits
+                if (error.status === 429) {
+                    // Increase max attempts for rate limit retries to give it more chances
+                    maxAttempts = Math.max(maxAttempts, 8);
+                    
+                    let retrySeconds = 60; // Default fallback wait is 60 seconds
+                    
+                    // Try to parse retryDelay from Google API error details
+                    if (error.details && Array.isArray(error.details)) {
+                        const retryInfo = error.details.find(d => d['@type'] === 'type.googleapis.com/google.rpc.RetryInfo');
+                        if (retryInfo && retryInfo.retryDelay) {
+                            // Format: "50s" or "50.93s"
+                            const secondsMatch = retryInfo.retryDelay.match(/^([\d.]+)\s*s$/i);
+                            if (secondsMatch) {
+                                retrySeconds = parseFloat(secondsMatch[1]);
+                            }
+                        }
+                    }
+                    
+                    // Add a small safety buffer (2 seconds)
+                    delay = (retrySeconds + 2) * 1000;
+                }
+
                 onRetry(index, attempt, delay, error.message);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
@@ -441,11 +634,12 @@ async function translateChunkWithRetry(chunk, index, apiKey, model, targetLangua
 // ============================================
 
 async function startTranslation() {
-    const apiKey = elements.apiKey.value;
+    const apiKey = elements.apiKey.value.trim();
     if (!apiKey || !srtContent) return;
 
     // Get settings
-    const model = elements.customModel.value.trim() || DEFAULT_MODEL;
+    const defaultModel = provider === 'openrouter' ? DEFAULT_MODEL_OPENROUTER : DEFAULT_MODEL_GEMINI;
+    const model = elements.customModel.value.trim() || defaultModel;
     const targetLanguage = elements.targetLanguage.value;
     const targetChunkSize = parseInt(elements.chunkSize.value) || 50;
     const maxParallel = parseInt(elements.parallelRequests.value) || DEFAULT_PARALLEL;
@@ -502,9 +696,11 @@ async function startTranslation() {
                 model,
                 targetLanguage,
                 customInstructions,
+                provider,
                 (idx, attempt, delay, errorMsg) => {
                     setChunkStatus(idx, 'error');
-                    log(`Chunk ${idx + 1} retry ${attempt}/${MAX_RETRIES}: ${errorMsg}`, 'error');
+                    const waitSec = Math.round(delay / 1000);
+                    log(`Chunk ${idx + 1} rate limited/failed. Retrying (attempt ${attempt}) in ${waitSec}s...`, 'error');
                     setTimeout(() => setChunkStatus(idx, 'processing'), 100);
                 }
             );
@@ -593,6 +789,7 @@ function getLanguageCode(language) {
         'Chinese (Simplified)': 'ZH-CN',
         'Chinese (Traditional)': 'ZH-TW',
         'Arabic': 'AR',
+        'Persian': 'FA',
         'Hindi': 'HI',
         'Dutch': 'NL',
         'Polish': 'PL',
@@ -603,6 +800,128 @@ function getLanguageCode(language) {
         'Greek': 'EL'
     };
     return codes[language] || 'TRANSLATED';
+}
+
+// Timing optimization to extend short "flash-and-go" subtitles (minimum 1.3 seconds)
+function optimizeTimings(blocks, minDurationMs = 1300) {
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        const times = parseTimestampRange(block.timestamp);
+        if (!times) continue;
+        
+        const duration = times.end - times.start;
+        if (duration < minDurationMs) {
+            let nextStart = Infinity;
+            if (i < blocks.length - 1) {
+                const nextTimes = parseTimestampRange(blocks[i + 1].timestamp);
+                if (nextTimes) {
+                    nextStart = nextTimes.start;
+                }
+            }
+            
+            // Extend duration up to minDurationMs, leaving a 50ms gap before the next subtitle starts
+            const extendedEnd = times.start + minDurationMs;
+            const maxAllowedEnd = nextStart - 50;
+            const newEnd = Math.max(times.end, Math.min(extendedEnd, maxAllowedEnd));
+            
+            if (newEnd > times.end) {
+                block.timestamp = `${formatMs(times.start)} --> ${formatMs(newEnd)}`;
+            }
+        }
+    }
+}
+
+// Merge short trailing subtitle blocks into the previous block if they are part of the same sentence
+function mergeShortSubtitles(blocks, maxCombinedWords = 15, maxCombinedChars = 80, shortBlockDurationMs = 1200, shortWordCount = 4) {
+    let i = 0;
+    while (i < blocks.length - 1) {
+        const currentBlock = blocks[i];
+        const nextBlock = blocks[i + 1];
+        
+        const currentTimes = parseTimestampRange(currentBlock.timestamp);
+        const nextTimes = parseTimestampRange(nextBlock.timestamp);
+        
+        if (!currentTimes || !nextTimes) {
+            i++;
+            continue;
+        }
+        
+        const nextDuration = nextTimes.end - nextTimes.start;
+        const nextTextJoined = nextBlock.text.join(' ');
+        const nextWords = nextTextJoined.split(/\s+/).filter(Boolean);
+        
+        // Next block is candidates for merging if it has short duration or very few words
+        const isNextShort = nextDuration < shortBlockDurationMs || nextWords.length <= shortWordCount;
+        
+        const currentTextJoined = currentBlock.text.join(' ');
+        const endsWithPunctuation = /[.!?]['"]*$/.test(currentTextJoined.trim());
+        const startsWithCapital = /^[A-Z]/.test(nextTextJoined.trim());
+        const isContinuingSentence = !endsWithPunctuation && !startsWithCapital;
+        
+        if (isNextShort && isContinuingSentence) {
+            const combinedText = currentBlock.text.concat(nextBlock.text);
+            const combinedTextJoined = combinedText.join(' ');
+            const combinedWords = combinedTextJoined.split(/\s+/).filter(Boolean);
+            
+            // Check if combined block length is within limits to avoid "filling the page"
+            if (combinedWords.length <= maxCombinedWords && combinedTextJoined.length <= maxCombinedChars) {
+                // Merge nextBlock into currentBlock (join text into a single line)
+                const joinedText = currentBlock.text.join(' ') + ' ' + nextBlock.text.join(' ');
+                currentBlock.text = [joinedText];
+                currentBlock.timestamp = `${formatMs(currentTimes.start)} --> ${formatMs(nextTimes.end)}`;
+                
+                // Remove nextBlock from array
+                blocks.splice(i + 1, 1);
+                
+                // Do not increment i, so we can check if this new combined block can merge with the next one
+                continue;
+            }
+        }
+        
+        i++;
+    }
+    
+    // Re-index all blocks
+    for (let idx = 0; idx < blocks.length; idx++) {
+        blocks[idx].index = idx + 1;
+    }
+}
+
+function parseTimestampRange(timestampStr) {
+    if (!timestampStr) return null;
+    const parts = timestampStr.split('-->');
+    if (parts.length !== 2) return null;
+    
+    function parseTime(t) {
+        const clean = t.trim().replace('.', ',');
+        const subparts = clean.split(',');
+        if (subparts.length !== 2) return 0;
+        
+        const hms = subparts[0].split(':');
+        if (hms.length !== 3) return 0;
+        
+        const h = parseInt(hms[0]) || 0;
+        const m = parseInt(hms[1]) || 0;
+        const s = parseInt(hms[2]) || 0;
+        const ms = parseInt(subparts[1]) || 0;
+        
+        return (h * 3600 + m * 60 + s) * 1000 + ms;
+    }
+    
+    return {
+        start: parseTime(parts[0]),
+        end: parseTime(parts[1])
+    };
+}
+
+function formatMs(ms) {
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    const msec = ms % 1000;
+    
+    const pad = (num, size) => num.toString().padStart(size, '0');
+    return `${pad(hours, 2)}:${pad(minutes, 2)}:${pad(seconds, 2)},${pad(msec, 3)}`;
 }
 
 // ============================================

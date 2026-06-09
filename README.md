@@ -2,8 +2,6 @@
 
 A powerful, browser-based tool for translating SRT subtitle files using AI. Built for speed, accuracy, and ease of use.
 
-![SRT Translator UI](assets/ui.webp)
-
 ## 🎯 What Problem Does It Solve?
 
 Translating subtitles is tedious and expensive:
@@ -19,54 +17,56 @@ Translating subtitles is tedious and expensive:
 
 ## ✨ Features
 
-- **Drag & Drop** - Just drop your SRT file and go
-- **100 Parallel Requests** - Blazing fast translation
-- **Smart Chunking** - Processes 20 subtitle blocks per request for optimal precision
-- **Marker-Based Alignment** - Each subtitle block stays aligned with its timestamp
-- **Custom Instructions** - Add context-specific translation rules (e.g., "Use informal 'sen' instead of formal 'siz'")
-- **Custom Model Support** - Use any model available on OpenRouter
-- **Multi-Language** - Translate to 15+ popular languages
-- **Real-Time Progress** - Visual feedback for each chunk's status
-- **Retry with Backoff** - Automatic retry on failures
+- **API Provider Toggle** - Use **Google AI Studio (Gemini API)** directly or connect via **OpenRouter**
+- **Drag & Drop** - Just drop your SRT file and start translating
+- **Smart Split-Sentence Merging** - Automatically merges short trailing subtitle blocks (like single words) into the previous block if they are part of the same sentence, preventing them from flashing on screen too fast and providing the AI with better context.
+- **Extend Short Subtitles** - Automatically increase display time for fast subtitles with custom safety gaps
+- **Arabic & Persian Bidirectional Formatting** - Wrap lines in Unicode RLE/PDF embedding tags and automatically replace standard English punctuation with proper RTL punctuation (`،`, `؟`, `؛`) so that video players (like VLC) render text and word order correctly
+- **Safe Parallel Requests** - Defaults to `5` parallel requests to avoid free tier rate-limiting (429), customizable up to `100` for premium plans
+- **Smart Chunking** - Processes 20 subtitle blocks per request for optimal translation accuracy
+- **Marker-Based Alignment** - Uses custom boundaries so each subtitle block stays aligned with its timestamp
+- **Custom Instructions** - Add custom parameters (e.g. "Use informal tone", "Do not translate coding tags")
+- **Multi-Language** - Translate to 20+ popular languages, including **Persian**
+- **Real-Time Progress** - Visual feedback for chunk progress, errors, and rate-limit countdown timers
+- **Smart Quota Retry** - Automatically parses Google's `RetryInfo` on 429 quota errors and counts down the exact cooldown delay before resuming
 
 ## 🚀 Quick Start
 
-1. Open `index.html` in your browser
-2. Enter your [OpenRouter API key](https://openrouter.ai/keys)
-3. Drop an SRT file
-4. Select target language
-5. Click "Translate"
-6. Download your translated SRT
+1. Open `index.html` in your browser (double-click the file)
+2. Select your **API Provider** (Google AI Studio or OpenRouter) and enter your API Key
+3. Drop an SRT file into the upload zone
+4. Select target language (e.g., Persian, Arabic, Spanish)
+5. (Optional) Toggle **Merge short split sentences** or **Extend short subtitles**
+6. Click **Translate**
+7. Click **Download Translated SRT**
 
 ## ⚙️ Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **Model** | `google/gemini-3-flash-preview` | AI model for translation |
+| **API Provider** | `Google AI Studio` | Choose direct Gemini API or OpenRouter |
+| **Model** | `gemini-3.1-flash-lite` | default model ID (`google/gemini-3.1-flash-lite` on OpenRouter) |
 | **Chunk Size** | 20 | Number of subtitle blocks per API request |
-| **Parallel Requests** | 100 | Maximum concurrent API calls |
+| **Parallel Requests** | 5 | Safe concurrent API requests to avoid rate limits (exceeding 15 RPM) |
 
 ### Recommended Settings
 
-**Chunk Size: 20** is recommended for better precision. Smaller chunks mean:
-- Less text drift between subtitle blocks
-- More accurate timing alignment
-- Slightly more API calls, but with 100 parallel requests it's still fast
+- **Chunk Size: 20**: Recommended for better precision. Smaller chunks mean less text drift between subtitle blocks and more accurate timing alignment.
+- **Parallel Requests: 5**: Highly recommended for the Gemini Free Tier to keep your request rate below the 15 requests-per-minute (RPM) quota. If you have a pay-as-you-go key, you can increase this to `50` or `100` for faster speed.
 
 For the best **performance/cost** balance, we recommend:
 
 ```
-google/gemini-3-flash-preview
+gemini-3.1-flash-lite
 ```
 
 This model offers:
-- Fast response times
-- Excellent instruction following
-- Great translation quality
-- Cost-effective pricing
+- Extremely fast response times
+- High instruction following capability
+- Excellent cost-effective translation quality
 
 Other options:
-- `google/gemini-2.5-flash-lite` - Budget option, may have lower accuracy
+- `gemini-1.5-pro` / `gemini-1.5-flash` - Supported via custom model input field.
 
 ## 🧠 How It Works
 
@@ -158,9 +158,9 @@ Use casual, engaging language suitable for YouTube videos.
 
 ## 📝 API Requirements
 
-- **Provider:** [OpenRouter](https://openrouter.ai)
-- **API Key:** Get one at https://openrouter.ai/keys
-- **Models:** Any chat completion model on OpenRouter
+- **Providers:** [Google AI Studio](https://aistudio.google.com/) (direct API keys) or [OpenRouter](https://openrouter.ai/) (multi-model gateway)
+- **API Keys:** Get a Gemini API key at [Google AI Studio Keys](https://aistudio.google.com/app/apikey) or OpenRouter API key at [OpenRouter Keys](https://openrouter.ai/keys)
+- **Models:** Defaults to `gemini-3.1-flash-lite` (Google AI Studio) and `google/gemini-3.1-flash-lite` (OpenRouter). Any custom compatible model is supported.
 
 ## 🛡️ Privacy
 
