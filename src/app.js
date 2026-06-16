@@ -638,6 +638,7 @@ async function startTranslation() {
     if (!apiKey || !srtContent) return;
 
     // Get settings
+    const provider = elements.apiProvider.value;
     const defaultModel = provider === 'openrouter' ? DEFAULT_MODEL_OPENROUTER : DEFAULT_MODEL_GEMINI;
     const model = elements.customModel.value.trim() || defaultModel;
     const targetLanguage = elements.targetLanguage.value;
